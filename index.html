@@ -36,7 +36,7 @@ label{display:block;font-weight:800;margin:12px 0 7px;color:var(--m)}
 .danger{background:#fee2e2;color:var(--r)}
 .hidden{display:none!important}
 .list{display:flex;flex-direction:column;gap:10px;margin-top:10px}
-.line{display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid var(--b);padding:8px 0}
+.line{display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid var(--b);padding:8px 0}.today-card{background:#fff;border:1px solid var(--b);border-radius:16px;padding:12px;display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.today-name{font-weight:900;color:var(--m);margin-bottom:4px}.today-info{font-size:13px;color:var(--g);line-height:1.35}
 .pill{background:var(--m);color:var(--c);border-radius:999px;padding:7px 10px;font-weight:900;white-space:nowrap}
 .admin-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px}
 .stock-form{display:grid;grid-template-columns:1fr 110px;gap:10px;align-items:end}
@@ -177,12 +177,39 @@ async function addEstoque(){let s=E('estoqueSabor').value,q=+E('estoqueQtd').val
 function norm(t){return String(t||'').toLowerCase().normalize('NFD').replace(/[^a-z0-9 ]/g,' ').replace(/ +/g,' ').trim()}
 function achar(t){let a=norm(t).replace('nutela','nutella'),map={'sensacao':'Sensação com Nutella','brownie e nutella':'Brownie com Nutella','ninho com morango':'Ninho com geleia de morango','morango e geleia':'Morango com geleia de morango','oreo':'Oreo','negresco':'Negresco','tablito':'Tablito','tapioca':'Tapioca','pudim':'Pudim','coco':'Coco','ovomaltine':'Ovomaltine','chocomenta':'Chocomenta','maracuja':'Maracujá','prestigio':'Prestígio','galak':'Galak'};if(map[a])return map[a];let best=null,pts=0;sabores.forEach(s=>{let p=0;norm(s).split(' ').forEach(w=>{if(w.length>2&&a.includes(w))p++});if(p>pts){pts=p;best=s}});return best}
 async function importar(){let ops=[];E('textoEstoque').value.split('\n').forEach(l=>{l=l.trim();let i=0;while(i<l.length&&l[i]>='0'&&l[i]<='9')i++;if(!i)return;let s=achar(l.slice(i)),q=+l.slice(0,i);if(s&&q>0)ops.push({s,q})});if(!ops.length)return alert('Nenhum sabor identificado.');try{for(let o of ops){await db.collection('estoque').doc(o.s).set({sabor:o.s,quantidade:firebase.firestore.FieldValue.increment(o.q),atualizadoEm:firebase.firestore.FieldValue.serverTimestamp()},{merge:true})}E('textoEstoque').value='';alert('Estoque importado.')}catch(e){alert('Erro ao importar: '+e.code)}}
-function renderHoje(){let d=baixas.filter(x=>x.data===hojeISO()).sort((a,b)=>(b.criadoEmMillis||0)-(a.criadoEmMillis||0)).slice(0,8);E('hoje').innerHTML=d.length?d.map(x=>`<div class="summary-item"><div><b>${x.nome}</b><span>${x.sabor} • ${x.hora} • ${x.pagou==='Sim'?x.formaPagamento:'Pendente'}</span></div><span class="pill">${x.quantidade} un.</span></div>`).join(''):'<div class="empty">Nenhuma baixa hoje.</div>'}
+function renderHoje(){
+  let d=baixas.filter(x=>x.data===hojeISO()).sort((a,b)=>(b.criadoEmMillis||0)-(a.criadoEmMillis||0)).slice(0,8);
+  E('hoje').innerHTML=d.length?d.map(x=>`
+    <div class="today-card">
+      <div>
+        <div class="today-name">${x.nome}</div>
+        <div class="today-info">${x.sabor}<br>${x.hora} • ${x.pagou==='Sim'?x.formaPagamento:'Pendente'}</div>
+      </div>
+      <span class="pill">${x.quantidade} un.</span>
+    </div>
+  `).join(''):'<div class="empty">Nenhuma baixa hoje.</div>';
+}
 function filtrados(){let ini=E('dataIni').value,fim=E('dataFim').value,n=E('fNome').value.toLowerCase().trim(),s=E('fSabor').value,p=E('fPagou').value;return baixas.filter(x=>(!ini||x.data>=ini)&&(!fim||x.data<=fim)&&(!n||String(x.nome).toLowerCase().includes(n))&&(!s||x.sabor===s)&&(!p||x.pagou===p)).sort((a,b)=>(b.criadoEmMillis||0)-(a.criadoEmMillis||0))}
 function renderAdmin(){E('estoqueTabela').innerHTML=sabores.map(s=>`<tr><td>${s}</td><td><b>${estoque[s]||0}</b></td></tr>`).join('');let d=filtrados();E('relatorio').innerHTML=d.length?d.map(x=>`<tr><td>${dataBR(x.data)}</td><td>${x.hora}</td><td>${x.nome}</td><td>${x.sabor}</td><td><b>${x.quantidade}</b></td><td>${x.pagou}</td><td>${x.formaPagamento}</td><td><button class="danger" data-del="${x.id}">Excluir</button></td></tr>`).join(''):'<tr><td colspan="8" class="empty">Nenhum registro encontrado.</td></tr>';E('stTotal').textContent=d.reduce((s,x)=>s+(+x.quantidade),0);E('stLanc').textContent=d.length;E('stPessoas').textContent=new Set(d.map(x=>String(x.nome).toLowerCase())).size;E('stPagos').textContent=d.filter(x=>x.pagou==='Sim').reduce((s,x)=>s+(+x.quantidade),0);E('stNao').textContent=d.filter(x=>x.pagou==='Não').reduce((s,x)=>s+(+x.quantidade),0)}
 async function excluir(id){let item=baixas.find(x=>x.id===id);if(!item||!confirm('Excluir e devolver ao estoque?'))return;try{await db.runTransaction(async tr=>{let eRef=db.collection('estoque').doc(item.sabor),bRef=db.collection('baixas').doc(id),snap=await tr.get(eRef),atual=snap.exists?Number(snap.data().quantidade||0):0;tr.delete(bRef);tr.set(eRef,{sabor:item.sabor,quantidade:atual+Number(item.quantidade||0),atualizadoEm:firebase.firestore.FieldValue.serverTimestamp()},{merge:true})})}catch(e){alert('Erro ao excluir: '+e.code)}}
 function limparFiltros(){['dataIni','dataFim','fNome','fSabor','fPagou'].forEach(id=>E(id).value='');renderAdmin()}
-function csv(){let d=filtrados();if(!d.length)return alert('Não há dados.');let out='Data;Hora;Nome;Sabor;Quantidade;Pagou;Forma\n';d.forEach(x=>out+=`${dataBR(x.data)};${x.hora};${x.nome};${x.sabor};${x.quantidade};${x.pagou};${x.formaPagamento}\n`);let blob=new Blob(['\ufeff'+out],{type:'text/csv'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='relatorio-nandale-'+hojeISO()+'.csv';a.click();URL.revokeObjectURL(url)}
+function csv(){
+  let d=filtrados();
+  if(!d.length)return alert('Não há dados.');
+  function csvCell(v){return '"' + String(v ?? '').replaceAll('"','""') + '"'}
+  let linhas=[['Data','Hora','Nome','Sabor','Quantidade','Pagou','Forma']];
+  d.forEach(x=>{
+    // Data como texto para o Excel não mostrar ####### por causa da largura da coluna.
+    linhas.push(['="'+dataBR(x.data)+'"',x.hora,x.nome,x.sabor,x.quantidade,x.pagou,x.formaPagamento]);
+  });
+  let out=linhas.map(l=>l.map(csvCell).join(';')).join('\n');
+  let blob=new Blob(['\ufeff'+out],{type:'text/csv;charset=utf-8;'});
+  let url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;
+  a.download='relatorio-nandale-'+hojeISO()+'.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
 function bind(){E('tabCliente').onclick=()=>tela('cliente');E('tabAdmin').onclick=()=>tela('admin');E('abrirCarrinhoResumo').onclick=abrirCarrinho;E('abrirCarrinhoFloat').onclick=abrirCarrinho;E('fecharCarrinho').onclick=fecharCarrinho;E('drawerBg').onclick=fecharCarrinho;E('todosPagos').onclick=()=>{Object.keys(carrinho).forEach(s=>pagamento[s]={paga:+carrinho[s],forma:'Pix'});saveCart();renderResumo()};E('todosPendentes').onclick=()=>{Object.keys(carrinho).forEach(s=>pagamento[s]={paga:0,forma:'Pix'});saveCart();renderResumo()};E('finalizar').onclick=finalizar;E('entrar').onclick=login;E('sair').onclick=logout;E('addEstoque').onclick=addEstoque;E('importarEstoque').onclick=importar;E('filtrar').onclick=renderAdmin;E('limparFiltros').onclick=limparFiltros;E('csv').onclick=csv;E('verSenha').onclick=()=>{E('senha').type=E('senha').type==='password'?'text':'password';E('verSenha').textContent=E('senha').type==='password'?'Ver':'Ocultar'};E('nome').oninput=()=>{if(E('nome').value)localStorage.setItem(KN,E('nome').value)};E('nomeCarrinho').oninput=()=>{if(E('nomeCarrinho').value)localStorage.setItem(KN,E('nomeCarrinho').value)};document.body.addEventListener('click',e=>{let t=e.target;if(t.dataset.sabor){let s=t.dataset.sabor,a=t.dataset.act;if(a==='check')setQtd(s,t.checked?1:0);if(a==='menos')setQtd(s,(+carrinho[s]||0)-1);if(a==='mais')setQtd(s,(+carrinho[s]||0)+1)}if(t.dataset.cart){let s=t.dataset.cart,a=t.dataset.act;if(a==='menos')setQtd(s,(+carrinho[s]||0)-1);if(a==='mais')setQtd(s,(+carrinho[s]||0)+1);if(a==='remover')removerDoCarrinho(s)}if(t.dataset.del)excluir(t.dataset.del)});document.body.addEventListener('change',e=>{let t=e.target;if(t.dataset.sabor&&t.dataset.act==='qtd')setQtd(t.dataset.sabor,t.value);if(t.dataset.cart){let s=t.dataset.cart,a=t.dataset.act;if(a==='qtd')setQtd(s,t.value);if(a==='paga'){if(!pagamento[s])pagamento[s]={paga:0,forma:'Pix'};pagamento[s].paga=Math.max(0,Math.min(+t.value||0,+carrinho[s]||0));saveCart();renderResumo()}if(a==='forma'){if(!pagamento[s])pagamento[s]={paga:+carrinho[s]||0,forma:'Pix'};pagamento[s].forma=t.value;saveCart();renderResumo()}}})}
 function iniciarFirebase(){db.collection('estoque').onSnapshot(snap=>{estoque={};snap.forEach(d=>{let x=d.data();estoque[x.sabor||d.id]=Number(x.quantidade||0)});status('Conectado');renderCliente();if(admin)renderAdmin()},e=>status('Não conectado: '+e.code));auth.onAuthStateChanged(user=>{admin=!!user;if(user){E('login').classList.add('hidden');E('painel').classList.remove('hidden');if(!E('dataIni').value)E('dataIni').value=hojeISO();if(!E('dataFim').value)E('dataFim').value=hojeISO();if(unsubBaixas)unsubBaixas();unsubBaixas=db.collection('baixas').onSnapshot(snap=>{baixas=[];snap.forEach(d=>{let x=d.data();x.id=d.id;x.criadoEmMillis=x.criadoEm&&x.criadoEm.toMillis?x.criadoEm.toMillis():0;baixas.push(x)});renderHoje();renderAdmin()},e=>alert('Erro no relatório: '+e.code))}else{E('login').classList.remove('hidden');E('painel').classList.add('hidden');baixas=[];if(unsubBaixas){unsubBaixas();unsubBaixas=null}renderHoje()}})}
 function init(){renderSelects();let n=localStorage.getItem(KN)||'';E('nome').value=n;E('nomeCarrinho').value=n;bind();tela('cliente');iniciarFirebase()}
